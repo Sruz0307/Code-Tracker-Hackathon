@@ -1,0 +1,9 @@
+Test/Add: 
+
+1. if a function parameter changes, the dependent function as well as the variable using the function should be affected
+2. Saving is done twice, change it to once
+3. changing the order of the lines
+4. when adding a variable
+5. when deleting a variable
+6. Try giving it to claud for analysis, with and without the dependency documents
+7. See if you can integrate it with vs code or smtg, try n8n
