@@ -23,7 +23,7 @@ def create_account(user_name=None):
 
 def new_user(balance=0):
     name ="bcd"
-    user_name = "abc"
+    user_name = "abcd"
     
     user_account = create_account(user_name) + str(balance) + name
     print(f"Welcome, your account number is: {user_account}")
