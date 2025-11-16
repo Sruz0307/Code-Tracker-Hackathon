@@ -1,4 +1,4 @@
-# claude_analyzer.py - Fixed bracket errors
+# claude_analyzer.py - Enhanced UI version
 import json
 import os
 import webbrowser
@@ -307,6 +307,67 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
             'sharedVariables': {k: list(v) for k, v in all_var_nodes.items() if len(v) > 1}
         }
     
+    def _parse_claude_analysis(self, analysis_text):
+        """Parse Claude's analysis into structured sections"""
+        sections = {
+            'overview': '',
+            'line_analyses': [],
+            'overall_assessment': '',
+            'risk_level': 'MEDIUM',
+            'testing_required': [],
+            'immediate_actions': []
+        }
+        
+        lines = analysis_text.split('\n')
+        current_section = 'overview'
+        current_line_analysis = None
+        
+        for line in lines:
+            line_stripped = line.strip()
+            
+            # Detect risk level
+            if 'CRITICAL' in line_stripped.upper():
+                sections['risk_level'] = 'CRITICAL'
+            elif 'HIGH' in line_stripped.upper() and 'RISK' in line_stripped.upper():
+                sections['risk_level'] = 'HIGH'
+            elif 'LOW' in line_stripped.upper() and 'RISK' in line_stripped.upper():
+                sections['risk_level'] = 'LOW'
+            
+            # Detect section headers
+            if 'line' in line_stripped.lower() and any(c.isdigit() for c in line_stripped):
+                if current_line_analysis:
+                    sections['line_analyses'].append(current_line_analysis)
+                current_line_analysis = {'title': line_stripped, 'content': ''}
+                current_section = 'line_analysis'
+            elif 'overall' in line_stripped.lower() or 'assessment' in line_stripped.lower():
+                if current_line_analysis:
+                    sections['line_analyses'].append(current_line_analysis)
+                    current_line_analysis = None
+                current_section = 'overall'
+            elif 'testing' in line_stripped.lower() or 'test' in line_stripped.lower():
+                current_section = 'testing'
+            elif 'action' in line_stripped.lower() or 'recommendation' in line_stripped.lower():
+                current_section = 'actions'
+            else:
+                # Add content to current section
+                if current_section == 'line_analysis' and current_line_analysis:
+                    current_line_analysis['content'] += line + '\n'
+                elif current_section == 'overall':
+                    sections['overall_assessment'] += line + '\n'
+                elif current_section == 'testing':
+                    if line_stripped and line_stripped.startswith(('-', '•', '*', '1', '2', '3')):
+                        sections['testing_required'].append(line_stripped.lstrip('-•*123456789. '))
+                elif current_section == 'actions':
+                    if line_stripped and line_stripped.startswith(('-', '•', '*', '1', '2', '3')):
+                        sections['immediate_actions'].append(line_stripped.lstrip('-•*123456789. '))
+                elif current_section == 'overview':
+                    sections['overview'] += line + '\n'
+        
+        if current_line_analysis:
+            sections['line_analyses'].append(current_line_analysis)
+        
+        return sections
+    
     def _create_html_visualization(self, file_path, changed_lines, affected_vars, affected_funcs, claude_analysis):
         file_name = os.path.basename(file_path)
         changed_lines_str = ", ".join(map(str, sorted(changed_lines)))
@@ -314,13 +375,10 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
         graph_data = self._build_dependency_graphs_per_line(file_path, changed_lines, affected_vars, affected_funcs)
         graph_json_str = json.dumps(graph_data)
         
-        # Properly escape for JavaScript template literal
-        claude_analysis_safe = (claude_analysis
-            .replace('\\', '\\\\')
-            .replace('`', '\\`')
-            .replace('${', '\\${'))
+        # Parse the analysis
+        parsed_analysis = self._parse_claude_analysis(claude_analysis)
+        parsed_json_str = json.dumps(parsed_analysis)
         
-        # Build HTML using a readable JavaScript structure
         html = f'''<!DOCTYPE html>
 <html>
 <head>
@@ -330,7 +388,100 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {{ margin: 0; font-family: sans-serif; background: #f3f4f6; }}
+        body {{ 
+            margin: 0; 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }}
+        
+        .glass-effect {{
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }}
+        
+        .severity-badge {{
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }}
+        
+        @keyframes pulse {{
+            0%, 100% {{ opacity: 1; }}
+            50% {{ opacity: .7; }}
+        }}
+        
+        .node-card {{
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+        
+        .node-card:hover {{
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }}
+        
+        .markdown-content h1 {{
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            color: #1f2937;
+        }}
+        
+        .markdown-content h2 {{
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-top: 1.25rem;
+            margin-bottom: 0.75rem;
+            color: #374151;
+        }}
+        
+        .markdown-content h3 {{
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-top: 1rem;
+            margin-bottom: 0.5rem;
+            color: #4b5563;
+        }}
+        
+        .markdown-content p {{
+            margin-bottom: 1rem;
+            line-height: 1.625;
+        }}
+        
+        .markdown-content ul, .markdown-content ol {{
+            margin-left: 1.5rem;
+            margin-bottom: 1rem;
+        }}
+        
+        .markdown-content li {{
+            margin-bottom: 0.5rem;
+        }}
+        
+        .markdown-content code {{
+            background: #f3f4f6;
+            padding: 0.125rem 0.375rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }}
+        
+        .markdown-content pre {{
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+        }}
+        
+        .markdown-content strong {{
+            font-weight: 600;
+            color: #111827;
+        }}
+        
+        .markdown-content em {{
+            font-style: italic;
+        }}
     </style>
 </head>
 <body>
@@ -338,25 +489,39 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
     <script>
         const e = React.createElement;
         const useState = React.useState;
+        const useEffect = React.useEffect;
         
         const graphData = {graph_json_str};
-        graphData.analysis = `{claude_analysis_safe}`;
+        const parsedAnalysis = {parsed_json_str};
+        const fileName = "{file_name}";
+        const changedLinesStr = "{changed_lines_str}";
+        const affectedFuncsCount = {len(affected_funcs)};
+        const affectedVarsCount = {len(affected_vars)};
         
         function App() {{
             const [zoom, setZoom] = useState(1);
             const [selectedNode, setSelectedNode] = useState(null);
-            const [activeTab, setActiveTab] = useState('graph');
+            const [activeTab, setActiveTab] = useState('overview');
+            const [showSeverityModal, setShowSeverityModal] = useState(false);
+            const [severityNode, setSeverityNode] = useState(null);
             
             const getSeverityColor = (severity) => {{
-                if (severity === 'HIGH') return '#ef4444';
+                if (severity === 'HIGH') return '#dc2626';
                 if (severity === 'MEDIUM') return '#f59e0b';
-                return '#10b981';
+                return '#16a34a';
             }};
             
             const getSeverityBg = (severity) => {{
-                if (severity === 'HIGH') return '#fee2e2';
-                if (severity === 'MEDIUM') return '#fef3c7';
-                return '#d1fae5';
+                if (severity === 'HIGH') return 'linear-gradient(135deg, #fecaca 0%, #fca5a5 100%)';
+                if (severity === 'MEDIUM') return 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)';
+                return 'linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%)';
+            }};
+            
+            const getRiskLevelColor = (risk) => {{
+                if (risk === 'CRITICAL') return '#991b1b';
+                if (risk === 'HIGH') return '#dc2626';
+                if (risk === 'MEDIUM') return '#f59e0b';
+                return '#16a34a';
             }};
             
             const totalHeight = graphData.graphs.length * 900;
@@ -368,49 +533,164 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                 allEdges.push(...graph.edges);
             }});
             
-            return e('div', {{ className: 'min-h-screen p-6' }},
-                e('div', {{ className: 'max-w-6xl mx-auto' }},
+            const handleNodeClick = (node) => {{
+                setSelectedNode(node);
+                setSeverityNode(node);
+                setShowSeverityModal(true);
+            }};
+            
+            return e('div', {{ className: 'min-h-screen p-8' }},
+                e('div', {{ className: 'max-w-7xl mx-auto' }},
                     // Header
-                    e('div', {{ className: 'bg-white p-6 rounded-lg shadow mb-6' }},
-                        e('h1', {{ className: 'text-3xl font-bold' }}, 'Impact Analysis: {file_name}'),
-                        e('p', {{ className: 'text-gray-600 mt-2' }}, 
-                            'Changed Lines: {changed_lines_str} • ' +
-                            '{len(affected_vars)} variables • {len(affected_funcs)} functions affected')
-                    ),
-                    
-                    // Tab selector
-                    e('div', {{ className: 'bg-white p-4 rounded-lg shadow mb-4' }},
-                        e('div', {{ className: 'flex gap-2' }},
-                            e('button', {{
-                                onClick: () => setActiveTab('graph'),
-                                className: 'px-4 py-2 rounded ' + (activeTab === 'graph' ? 'bg-blue-500 text-white' : 'bg-gray-200')
-                            }}, 'Dependency Graph'),
-                            e('button', {{
-                                onClick: () => setActiveTab('analysis'),
-                                className: 'px-4 py-2 rounded ' + (activeTab === 'analysis' ? 'bg-blue-500 text-white' : 'bg-gray-200')
-                            }}, 'Claude Analysis')
+                    e('div', {{ className: 'glass-effect p-8 rounded-2xl shadow-2xl mb-8' }},
+                        e('div', {{ className: 'flex items-center justify-between' }},
+                            e('div', null,
+                                e('h1', {{ className: 'text-4xl font-bold text-gray-900 mb-2' }}, 
+                                    '🔍 Impact Analysis Report'
+                                ),
+                                e('p', {{ className: 'text-xl text-gray-600' }}, fileName)
+                            ),
+                            e('div', {{ 
+                                className: 'px-6 py-3 rounded-xl font-bold text-white text-lg shadow-lg',
+                                style: {{ backgroundColor: getRiskLevelColor(parsedAnalysis.risk_level) }}
+                            }}, 
+                                parsedAnalysis.risk_level + ' RISK'
+                            )
+                        ),
+                        e('div', {{ className: 'mt-6 flex gap-6 text-sm' }},
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('span', {{ className: 'text-2xl' }}, '📝'),
+                                e('span', {{ className: 'text-gray-700' }}, 'Lines: ' + changedLinesStr)
+                            ),
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('span', {{ className: 'text-2xl' }}, '⚙️'),
+                                e('span', {{ className: 'text-gray-700' }}, affectedFuncsCount + ' functions affected')
+                            ),
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('span', {{ className: 'text-2xl' }}, '📊'),
+                                e('span', {{ className: 'text-gray-700' }}, affectedVarsCount + ' variables affected')
+                            )
                         )
                     ),
                     
-                    // Graph tab
-                    activeTab === 'graph' && e('div', {{ className: 'bg-white p-4 rounded-lg shadow' }},
+                    // Tab Navigation
+                    e('div', {{ className: 'glass-effect p-2 rounded-2xl shadow-lg mb-8' }},
+                        e('div', {{ className: 'flex gap-2' }},
+                            ['overview', 'graph', 'details'].map(tab => 
+                                e('button', {{
+                                    key: tab,
+                                    onClick: () => setActiveTab(tab),
+                                    className: 'flex-1 px-6 py-3 rounded-xl font-semibold transition-all duration-200 ' + 
+                                        (activeTab === tab 
+                                            ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg' 
+                                            : 'text-gray-600 hover:bg-gray-100')
+                                }}, 
+                                    tab === 'overview' ? '📋 Overview' : 
+                                    tab === 'graph' ? '🕸️ Dependency Graph' : 
+                                    '📑 Detailed Analysis'
+                                )
+                            )
+                        )
+                    ),
+                    
+                    // Overview Tab
+                    activeTab === 'overview' && e('div', {{ className: 'space-y-6' }},
+                        // Key Findings
+                        e('div', {{ className: 'glass-effect p-6 rounded-2xl shadow-lg' }},
+                            e('h2', {{ className: 'text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2' }},
+                                e('span', null, '🎯'),
+                                'Key Findings'
+                            ),
+                            e('div', {{ className: 'markdown-content text-gray-700' }},
+                                parsedAnalysis.overview || 'Analysis overview will appear here.'
+                            )
+                        ),
+                        
+                        // Immediate Actions
+                        parsedAnalysis.immediate_actions.length > 0 && e('div', {{ className: 'glass-effect p-6 rounded-2xl shadow-lg' }},
+                            e('h2', {{ className: 'text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2' }},
+                                e('span', null, '⚡'),
+                                'Immediate Actions Required'
+                            ),
+                            e('div', {{ className: 'space-y-3' }},
+                                parsedAnalysis.immediate_actions.map((action, idx) =>
+                                    e('div', {{ 
+                                        key: idx,
+                                        className: 'flex items-start gap-3 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg'
+                                    }},
+                                        e('span', {{ className: 'text-red-600 font-bold text-lg' }}, (idx + 1) + '.'),
+                                        e('p', {{ className: 'text-gray-800 flex-1' }}, action)
+                                    )
+                                )
+                            )
+                        ),
+                        
+                        // Testing Required
+                        parsedAnalysis.testing_required.length > 0 && e('div', {{ className: 'glass-effect p-6 rounded-2xl shadow-lg' }},
+                            e('h2', {{ className: 'text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2' }},
+                                e('span', null, '🧪'),
+                                'Testing Required'
+                            ),
+                            e('div', {{ className: 'space-y-2' }},
+                                parsedAnalysis.testing_required.map((test, idx) =>
+                                    e('div', {{ 
+                                        key: idx,
+                                        className: 'flex items-center gap-3 p-3 bg-blue-50 rounded-lg'
+                                    }},
+                                        e('span', {{ className: 'text-blue-600' }}, '✓'),
+                                        e('p', {{ className: 'text-gray-800' }}, test)
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    
+                    // Graph Tab
+                    activeTab === 'graph' && e('div', {{ className: 'glass-effect p-6 rounded-2xl shadow-lg' }},
                         // Zoom controls
-                        e('div', {{ className: 'flex gap-2 mb-4' }},
-                            e('button', {{
-                                onClick: () => setZoom(Math.max(0.5, zoom - 0.2)),
-                                className: 'px-3 py-2 bg-blue-100 rounded hover:bg-blue-200'
-                            }}, 'Zoom Out'),
-                            e('span', {{ className: 'px-3 py-2 font-bold' }}, zoom.toFixed(1) + 'x'),
-                            e('button', {{
-                                onClick: () => setZoom(Math.min(2, zoom + 0.2)),
-                                className: 'px-3 py-2 bg-blue-100 rounded hover:bg-blue-200'
-                            }}, 'Zoom In')
+                        e('div', {{ className: 'flex items-center gap-4 mb-6' }},
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('button', {{
+                                    onClick: () => setZoom(Math.max(0.5, zoom - 0.2)),
+                                    className: 'px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 shadow-md'
+                                }}, '🔍 Zoom Out'),
+                                e('span', {{ className: 'px-4 py-2 bg-gray-100 rounded-lg font-bold text-gray-800' }}, 
+                                    (zoom * 100).toFixed(0) + '%'
+                                ),
+                                e('button', {{
+                                    onClick: () => setZoom(Math.min(2, zoom + 0.2)),
+                                    className: 'px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 shadow-md'
+                                }}, '🔍 Zoom In')
+                            ),
+                            e('div', {{ className: 'ml-auto text-sm text-gray-600' }},
+                                '💡 Click any node to see severity details'
+                            )
+                        ),
+                        
+                        // Legend
+                        e('div', {{ className: 'flex gap-4 mb-6 p-4 bg-gray-50 rounded-lg' }},
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('div', {{ className: 'w-4 h-4 rounded bg-red-200 border-2 border-red-600' }}),
+                                e('span', {{ className: 'text-sm font-medium' }}, 'HIGH')
+                            ),
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('div', {{ className: 'w-4 h-4 rounded bg-yellow-200 border-2 border-yellow-600' }}),
+                                e('span', {{ className: 'text-sm font-medium' }}, 'MEDIUM')
+                            ),
+                            e('div', {{ className: 'flex items-center gap-2' }},
+                                e('div', {{ className: 'w-4 h-4 rounded bg-green-200 border-2 border-green-600' }}),
+                                e('span', {{ className: 'text-sm font-medium' }}, 'LOW')
+                            ),
+                            e('div', {{ className: 'flex items-center gap-2 ml-4' }},
+                                e('div', {{ className: 'w-4 h-4 rounded border-2 border-dashed border-blue-600' }}),
+                                e('span', {{ className: 'text-sm font-medium' }}, 'Shared Node')
+                            )
                         ),
                         
                         // Graph container
-                        e('div', {{ className: 'overflow-auto border', style: {{ maxHeight: '800px' }} }},
+                        e('div', {{ className: 'overflow-auto border-2 border-gray-200 rounded-xl', style: {{ maxHeight: '700px' }} }},
                             e('div', {{ 
-                                className: 'relative bg-white',
+                                className: 'relative bg-gradient-to-br from-gray-50 to-gray-100',
                                 style: {{ 
                                     height: (totalHeight * zoom) + 'px',
                                     width: (900 * zoom) + 'px',
@@ -422,10 +702,17 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                                 e('svg', {{ width: 900, height: totalHeight, className: 'absolute' }},
                                     e('defs', null,
                                         e('marker', {{ id: 'arrowhead', markerWidth: 10, markerHeight: 10, refX: 9, refY: 3, orient: 'auto' }},
-                                            e('polygon', {{ points: '0 0,10 3,0 6', fill: '#666' }})
+                                            e('polygon', {{ points: '0 0,10 3,0 6', fill: '#6b7280' }})
                                         ),
                                         e('marker', {{ id: 'arrowhead-blue', markerWidth: 10, markerHeight: 10, refX: 9, refY: 3, orient: 'auto' }},
                                             e('polygon', {{ points: '0 0,10 3,0 6', fill: '#3b82f6' }})
+                                        ),
+                                        e('filter', {{ id: 'glow' }},
+                                            e('feGaussianBlur', {{ stdDeviation: '3', result: 'coloredBlur' }}),
+                                            e('feMerge', null,
+                                                e('feMergeNode', {{ in: 'coloredBlur' }}),
+                                                e('feMergeNode', {{ in: 'SourceGraphic' }})
+                                            )
                                         )
                                     ),
                                     
@@ -440,9 +727,10 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                                             y1: fromNode.y,
                                             x2: toNode.x,
                                             y2: toNode.y,
-                                            stroke: '#999',
+                                            stroke: '#9ca3af',
                                             strokeWidth: 2,
-                                            markerEnd: 'url(#arrowhead)'
+                                            markerEnd: 'url(#arrowhead)',
+                                            opacity: 0.6
                                         }});
                                     }}),
                                     
@@ -459,8 +747,9 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                                             y2: toNode.y,
                                             stroke: '#3b82f6',
                                             strokeWidth: 3,
-                                            strokeDasharray: '5,5',
-                                            markerEnd: 'url(#arrowhead-blue)'
+                                            strokeDasharray: '8,4',
+                                            markerEnd: 'url(#arrowhead-blue)',
+                                            filter: 'url(#glow)'
                                         }});
                                     }})
                                 ),
@@ -469,84 +758,198 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                                 allNodes.map(node => {{
                                     return e('div', {{
                                         key: node.id,
-                                        className: 'absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform',
+                                        className: 'absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer node-card',
                                         style: {{
                                             left: node.x + 'px',
                                             top: node.y + 'px',
-                                            zIndex: 10
+                                            zIndex: selectedNode && selectedNode.id === node.id ? 30 : 10
                                         }},
-                                        onClick: () => setSelectedNode(node)
+                                        onClick: () => handleNodeClick(node)
                                     }},
                                         e('div', {{
-                                            className: 'rounded-lg p-3 shadow-lg',
+                                            className: 'rounded-xl p-4 shadow-xl',
                                             style: {{
-                                                backgroundColor: getSeverityBg(node.severity),
+                                                background: getSeverityBg(node.severity),
                                                 borderColor: node.isShared ? '#3b82f6' : getSeverityColor(node.severity),
                                                 borderWidth: node.isShared ? '3px' : '2px',
                                                 borderStyle: node.isShared ? 'dashed' : 'solid',
-                                                maxWidth: '200px'
+                                                maxWidth: '220px',
+                                                minWidth: '180px'
                                             }}
                                         }},
                                             e('div', {{
-                                                className: 'text-xs font-bold mb-1',
-                                                style: {{ color: node.isShared ? '#3b82f6' : getSeverityColor(node.severity) }}
+                                                className: 'flex items-center justify-between mb-2'
                                             }},
-                                                node.type === 'changed' 
-                                                    ? '🔴 LINE ' + node.lineNumber
-                                                    : (node.isShared ? '🔗 SHARED' : '⚠️')
+                                                e('div', {{
+                                                    className: 'text-xs font-bold',
+                                                    style: {{ color: node.isShared ? '#3b82f6' : getSeverityColor(node.severity) }}
+                                                }},
+                                                    node.type === 'changed' 
+                                                        ? '🔴 LINE ' + node.lineNumber
+                                                        : (node.isShared ? '🔗 SHARED' : '⚙️ NODE')
+                                                ),
+                                                e('button', {{
+                                                    className: 'text-xs px-2 py-1 rounded bg-white bg-opacity-50 hover:bg-opacity-100 font-semibold',
+                                                    onClick: (ev) => {{ ev.stopPropagation(); handleNodeClick(node); }}
+                                                }}, 'ℹ️')
                                             ),
-                                            e('div', {{ className: 'text-sm font-semibold' }}, node.label),
+                                            e('div', {{ className: 'text-base font-bold text-gray-900 mb-2' }}, node.label),
                                             e('div', {{
-                                                className: 'text-xs px-2 py-1 rounded mt-2 text-white font-semibold',
-                                                style: {{ backgroundColor: node.isShared ? '#3b82f6' : getSeverityColor(node.severity) }}
+                                                className: 'text-xs px-3 py-1 rounded-full text-white font-bold text-center shadow-md severity-badge',
+                                                style: {{ backgroundColor: getSeverityColor(node.severity) }}
                                             }}, node.severity),
-                                            node.isShared && e('div', {{ className: 'text-xs mt-1 text-blue-600 font-semibold' }},
-                                                'Lines: ' + node.affectedByLines.join(', ')
+                                            node.isShared && e('div', {{ className: 'text-xs mt-2 text-blue-700 font-semibold bg-white bg-opacity-60 rounded px-2 py-1' }},
+                                                '📍 Lines: ' + node.affectedByLines.join(', ')
+                                            ),
+                                            node.dependencyCount !== undefined && e('div', {{ className: 'text-xs mt-2 text-gray-700 font-medium' }},
+                                                '🔗 ' + node.dependencyCount + ' dependencies'
                                             )
                                         )
                                     );
                                 }})
                             )
+                        )
+                    ),
+                    
+                    // Details Tab
+                    activeTab === 'details' && e('div', {{ className: 'space-y-6' }},
+                        parsedAnalysis.line_analyses.length > 0 ? parsedAnalysis.line_analyses.map((lineAnalysis, idx) =>
+                            e('div', {{ 
+                                key: idx,
+                                className: 'glass-effect p-6 rounded-2xl shadow-lg'
+                            }},
+                                e('h3', {{ className: 'text-xl font-bold text-gray-900 mb-4 flex items-center gap-2' }},
+                                    e('span', null, '📍'),
+                                    lineAnalysis.title
+                                ),
+                                e('div', {{ className: 'markdown-content text-gray-700' }},
+                                    lineAnalysis.content
+                                )
+                            )
+                        ) : e('div', {{ className: 'glass-effect p-8 rounded-2xl shadow-lg text-center' }},
+                            e('p', {{ className: 'text-gray-600 text-lg' }}, 'No detailed line-by-line analysis available.')
                         ),
                         
-                        // Selected node details
-                        selectedNode && e('div', {{ className: 'mt-4 bg-gradient-to-r from-blue-50 to-blue-100 border-l-4 border-blue-500 p-5 rounded-lg shadow-md' }},
-                            e('div', {{ className: 'flex justify-between mb-3' }},
-                                e('h4', {{ className: 'font-bold text-lg' }}, selectedNode.label),
-                                e('button', {{
-                                    onClick: () => setSelectedNode(null),
-                                    className: 'text-blue-600 hover:text-blue-800 font-bold text-xl'
-                                }}, '✕')
+                        // Overall Assessment
+                        parsedAnalysis.overall_assessment && e('div', {{ className: 'glass-effect p-6 rounded-2xl shadow-lg' }},
+                            e('h2', {{ className: 'text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2' }},
+                                e('span', null, '📊'),
+                                'Overall Assessment'
                             ),
-                            e('div', {{ className: 'space-y-3' }},
-                                e('div', {{ className: 'bg-white rounded p-3' }},
-                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '📋 Description'),
-                                    e('p', {{ className: 'text-sm' }}, selectedNode.description)
-                                ),
-                                e('div', {{ className: 'bg-white rounded p-3' }},
-                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '💥 Impact'),
-                                    e('p', {{ className: 'text-sm' }}, selectedNode.impact)
-                                ),
-                                e('div', {{ className: 'bg-white rounded p-3' }},
-                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '🎯 Severity Explanation'),
-                                    e('p', {{ className: 'text-sm' }}, selectedNode.severityReason)
-                                ),
-                                selectedNode.dependencyCount !== undefined && e('div', {{ className: 'bg-white rounded p-3' }},
-                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '🔗 Dependencies'),
-                                    e('p', {{ className: 'text-sm' }}, selectedNode.dependencyCount + ' total dependencies')
-                                ),
-                                selectedNode.isShared && e('div', {{ className: 'bg-blue-100 rounded p-3 border border-blue-300' }},
-                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '🔗 Shared Node'),
-                                    e('p', {{ className: 'text-sm' }}, 'Affected by lines: ' + selectedNode.affectedByLines.join(', '))
-                                )
+                            e('div', {{ className: 'markdown-content text-gray-700' }},
+                                parsedAnalysis.overall_assessment
                             )
                         )
                     ),
                     
-                    // Analysis tab
-                    activeTab === 'analysis' && e('div', {{ className: 'bg-white p-6 rounded-lg shadow' }},
-                        e('h2', {{ className: 'text-2xl font-bold mb-4' }}, 'Claude AI Analysis'),
-                        e('div', {{ className: 'whitespace-pre-wrap text-gray-800' }}, graphData.analysis)
+                    // Severity Detail Modal
+                    showSeverityModal && severityNode && e('div', {{
+                        className: 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4',
+                        onClick: () => setShowSeverityModal(false)
+                    }},
+                        e('div', {{
+                            className: 'glass-effect p-8 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-auto',
+                            onClick: (ev) => ev.stopPropagation()
+                        }},
+                            e('div', {{ className: 'flex items-start justify-between mb-6' }},
+                                e('div', null,
+                                    e('h3', {{ className: 'text-2xl font-bold text-gray-900' }}, severityNode.label),
+                                    e('p', {{ className: 'text-gray-600 mt-1' }}, severityNode.description)
+                                ),
+                                e('button', {{
+                                    onClick: () => setShowSeverityModal(false),
+                                    className: 'text-gray-500 hover:text-gray-700 text-3xl font-bold leading-none'
+                                }}, '×')
+                            ),
+                            
+                            // Severity Badge Large
+                            e('div', {{ className: 'mb-6' }},
+                                e('div', {{
+                                    className: 'inline-flex items-center gap-3 px-6 py-3 rounded-xl text-white font-bold text-lg shadow-lg',
+                                    style: {{ backgroundColor: getSeverityColor(severityNode.severity) }}
+                                }},
+                                    e('span', null, severityNode.severity === 'HIGH' ? '🔴' : severityNode.severity === 'MEDIUM' ? '🟡' : '🟢'),
+                                    e('span', null, severityNode.severity + ' SEVERITY')
+                                )
+                            ),
+                            
+                            // Details
+                            e('div', {{ className: 'space-y-4' }},
+                                e('div', {{ className: 'bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl border-l-4 border-blue-500' }},
+                                    e('h4', {{ className: 'font-bold text-gray-900 mb-2 flex items-center gap-2' }},
+                                        e('span', null, '🎯'),
+                                        'Why This Severity?'
+                                    ),
+                                    e('p', {{ className: 'text-gray-700 leading-relaxed' }}, severityNode.severityReason)
+                                ),
+                                
+                                e('div', {{ className: 'bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-xl border-l-4 border-purple-500' }},
+                                    e('h4', {{ className: 'font-bold text-gray-900 mb-2 flex items-center gap-2' }},
+                                        e('span', null, '💥'),
+                                        'Impact'
+                                    ),
+                                    e('p', {{ className: 'text-gray-700 leading-relaxed' }}, severityNode.impact)
+                                ),
+                                
+                                severityNode.dependencyCount !== undefined && e('div', {{ className: 'bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-xl border-l-4 border-green-500' }},
+                                    e('h4', {{ className: 'font-bold text-gray-900 mb-2 flex items-center gap-2' }},
+                                        e('span', null, '🔗'),
+                                        'Dependencies'
+                                    ),
+                                    e('p', {{ className: 'text-gray-700 leading-relaxed' }},
+                                        'This node has ' + severityNode.dependencyCount + ' total dependencies. ' +
+                                        (severityNode.dependencyCount > 5 
+                                            ? 'High dependency count indicates complex interconnections and wider blast radius for changes.'
+                                            : severityNode.dependencyCount > 2
+                                            ? 'Moderate dependency count suggests careful testing of related functionality.'
+                                            : 'Low dependency count indicates relatively isolated impact.')
+                                    )
+                                ),
+                                
+                                severityNode.isShared && e('div', {{ className: 'bg-gradient-to-r from-yellow-50 to-amber-50 p-4 rounded-xl border-l-4 border-yellow-500' }},
+                                    e('h4', {{ className: 'font-bold text-gray-900 mb-2 flex items-center gap-2' }},
+                                        e('span', null, '⚠️'),
+                                        'Shared Node Warning'
+                                    ),
+                                    e('p', {{ className: 'text-gray-700 leading-relaxed' }},
+                                        'This node is affected by multiple changed lines (' + severityNode.affectedByLines.join(', ') + '). ' +
+                                        'Shared nodes require extra attention as they accumulate risk from multiple sources.'
+                                    )
+                                ),
+                                
+                                e('div', {{ className: 'bg-gradient-to-r from-gray-50 to-slate-50 p-4 rounded-xl border-l-4 border-gray-400' }},
+                                    e('h4', {{ className: 'font-bold text-gray-900 mb-2 flex items-center gap-2' }},
+                                        e('span', null, '📋'),
+                                        'Recommended Actions'
+                                    ),
+                                    e('ul', {{ className: 'list-disc list-inside space-y-1 text-gray-700' }},
+                                        severityNode.severity === 'HIGH' && [
+                                            e('li', {{ key: '1' }}, 'Conduct thorough code review with senior developer'),
+                                            e('li', {{ key: '2' }}, 'Write comprehensive unit and integration tests'),
+                                            e('li', {{ key: '3' }}, 'Perform manual QA testing in staging environment'),
+                                            e('li', {{ key: '4' }}, 'Consider feature flag for gradual rollout')
+                                        ],
+                                        severityNode.severity === 'MEDIUM' && [
+                                            e('li', {{ key: '1' }}, 'Peer review required before deployment'),
+                                            e('li', {{ key: '2' }}, 'Ensure test coverage for affected functionality'),
+                                            e('li', {{ key: '3' }}, 'Monitor closely in production after deployment')
+                                        ],
+                                        severityNode.severity === 'LOW' && [
+                                            e('li', {{ key: '1' }}, 'Standard code review process'),
+                                            e('li', {{ key: '2' }}, 'Basic test coverage verification'),
+                                            e('li', {{ key: '3' }}, 'Normal deployment process acceptable')
+                                        ]
+                                    )
+                                )
+                            ),
+                            
+                            e('div', {{ className: 'mt-6 flex justify-end' }},
+                                e('button', {{
+                                    onClick: () => setShowSeverityModal(false),
+                                    className: 'px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 shadow-lg'
+                                }}, 'Close')
+                            )
+                        )
                     )
                 )
             );
