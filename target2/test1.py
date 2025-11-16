@@ -22,8 +22,8 @@ def create_account(user_name=None):
     return account_number
 
 def new_user(balance=0):
-    name ="bc"
-    user_name = "a"
+    name ="b"
+    user_name = "ab"
     
     user_account = create_account(user_name) + str(balance) + name
     print(f"Welcome, your account number is: {user_account}")

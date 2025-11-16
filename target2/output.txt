@@ -157,3 +157,23 @@ Changed lines: [25, 26]
 
 Detected change in: C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2\test1.py
 No changes detected.
+
+Detected change in: C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2\test1.py
+Changed lines: [26]
+
+ MODIFIED (and downstream impacts):
+   Variables: {'test1.generate_account_number.prefix', 'test1.generate_account_number.generate_account_number.balance', 'test1.generate_account_number.intermediate', 'test1.create_account.account_number', 'test1.new_user.user_account', 'test1.generate_account_number.generate_account_number.user_name', 'test1.new_user.user_name'}
+   Functions: {'test1.generate_account_number.generate_account_number', 'test1.new_user.new_user', 'test1.create_account.create_account'}
+
+Detected change in: C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2\test1.py
+No changes detected.
+
+Detected change in: C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2\test1.py
+Changed lines: [25, 26]
+
+ MODIFIED (and downstream impacts):
+   Variables: {'test1.generate_account_number.generate_account_number.balance', 'test1.create_account.account_number', 'test1.new_user.user_account', 'test1.generate_account_number.generate_account_number.user_name', 'test1.generate_account_number.prefix', 'test1.new_user.name', 'test1.generate_account_number.intermediate', 'test1.new_user.user_name'}
+   Functions: {'test1.generate_account_number.generate_account_number', 'test1.new_user.new_user', 'test1.create_account.create_account'}
+
+Detected change in: C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2\test1.py
+No changes detected.
