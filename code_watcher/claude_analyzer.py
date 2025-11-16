@@ -1,4 +1,4 @@
-# claude_analyzer.py
+# claude_analyzer.py - Fixed bracket errors
 import json
 import os
 import webbrowser
@@ -10,7 +10,6 @@ class ClaudeImpactAnalyzer:
         self.api_key = api_key
         self.api_url = "https://api.anthropic.com/v1/messages"
         
-        # Check if requests is available
         try:
             import requests
             self.requests = requests
@@ -21,26 +20,19 @@ class ClaudeImpactAnalyzer:
     def generate_impact_analysis(self, file_path, changed_lines, affected_vars, affected_funcs, 
                                  added_vars, added_funcs, deleted_vars, deleted_funcs,
                                  affected_by_deletion, code_content):
-        """
-        Send change data to Claude API and get impact analysis + visualization
-        """
-        
         if not self.requests:
             print("❌ Cannot proceed without 'requests' library")
             return None
         
-        # Prepare the prompt for Claude
         prompt = self._build_analysis_prompt(
             file_path, changed_lines, affected_vars, affected_funcs,
             added_vars, added_funcs, deleted_vars, deleted_funcs,
             affected_by_deletion, code_content
         )
         
-        # Call Claude API
         response = self._call_claude_api(prompt)
         
         if response:
-            # Generate and open visualization
             self._generate_visualization(response, file_path, changed_lines, 
                                         affected_vars, affected_funcs)
             return response
@@ -50,8 +42,6 @@ class ClaudeImpactAnalyzer:
     def _build_analysis_prompt(self, file_path, changed_lines, affected_vars, affected_funcs,
                                added_vars, added_funcs, deleted_vars, deleted_funcs,
                                affected_by_deletion, code_content):
-        """Build the prompt for Claude with all change information"""
-        
         file_name = os.path.basename(file_path)
         
         prompt = f"""You are analyzing code changes for production deployment. Provide a detailed impact analysis.
@@ -90,7 +80,6 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
         return prompt
     
     def _call_claude_api(self, prompt):
-        """Make API call to Claude"""
         try:
             headers = {
                 "Content-Type": "application/json",
@@ -101,12 +90,7 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
             payload = {
                 "model": "claude-sonnet-4-20250514",
                 "max_tokens": 4096,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
+                "messages": [{"role": "user", "content": prompt}]
             }
             
             print("🤖 Calling Claude API for impact analysis...")
@@ -125,9 +109,7 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
     
     def _generate_visualization(self, claude_response, file_path, changed_lines, 
                                 affected_vars, affected_funcs):
-        """Generate HTML visualization from Claude response"""
         try:
-            # Extract text from Claude response
             analysis_text = ""
             for content_block in claude_response:
                 if content_block.get("type") == "text":
@@ -137,12 +119,10 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                 print("⚠️  No analysis text received from Claude")
                 return
             
-            # Generate HTML visualization
             html_content = self._create_html_visualization(
                 file_path, changed_lines, affected_vars, affected_funcs, analysis_text
             )
             
-            # Save and open
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             file_name = f"impact_analysis_{timestamp}.html"
             temp_path = os.path.join(tempfile.gettempdir(), file_name)
@@ -159,489 +139,422 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
             import traceback
             traceback.print_exc()
     
-    def _build_dependency_graph(self, file_path, changed_lines, affected_vars, affected_funcs):
-        """Build dependency graph data structure for visualization"""
-        from analyzer import build_full_graph_for_file
+    def _build_dependency_graphs_per_line(self, file_path, changed_lines, affected_vars, affected_funcs):
+        from analyzer import build_full_graph_for_file, analyze_file_changes
         
-        # Get the full dependency graph
         full_graph = build_full_graph_for_file(file_path)
+        graphs_by_line = {}
+        all_func_nodes = {}
+        all_var_nodes = {}
         
-        nodes = []
-        edges = []
+        for line_num in sorted(changed_lines):
+            line_affected_vars, line_affected_funcs = analyze_file_changes(file_path, [line_num])
+            
+            for func in line_affected_funcs:
+                if func not in all_func_nodes:
+                    all_func_nodes[func] = set()
+                all_func_nodes[func].add(line_num)
+            
+            for var in line_affected_vars:
+                if var not in all_var_nodes:
+                    all_var_nodes[var] = set()
+                all_var_nodes[var].add(line_num)
+            
+            graphs_by_line[line_num] = {
+                'affected_vars': line_affected_vars,
+                'affected_funcs': line_affected_funcs
+            }
         
-        # Create nodes for changed lines (left side)
-        x_line = 100
-        y_start = 100
-        y_spacing = 120
+        all_graphs = []
+        y_offset_per_graph = 900
         
         for idx, line_num in enumerate(sorted(changed_lines)):
-            node_id = f"line{line_num}"
+            nodes = []
+            edges = []
+            graph_y_base = idx * y_offset_per_graph + 150
+            line_data = graphs_by_line[line_num]
+            
+            source_node_id = f"line{line_num}"
             nodes.append({
-                'id': node_id,
+                'id': source_node_id,
                 'label': f'Line {line_num}',
                 'type': 'changed',
                 'severity': 'HIGH',
-                'x': x_line,
-                'y': y_start + (idx * y_spacing),
+                'x': 120,
+                'y': graph_y_base,
                 'description': f'Code changed on line {line_num}',
-                'impact': 'Source of change - propagates to dependent code'
-            })
-        
-        # Create nodes for affected functions (middle)
-        x_func = 350
-        func_y = y_start
-        func_spacing = 100
-        
-        for idx, func in enumerate(sorted(affected_funcs)):
-            func_short = func.split('.')[-1] if '.' in func else func
-            node_id = f"func_{func}"
-            
-            # Determine severity based on dependencies
-            deps = full_graph.get('functions', {}).get(func, {}).get('depends_on', [])
-            severity = 'HIGH' if len(deps) > 3 else 'MEDIUM'
-            
-            nodes.append({
-                'id': node_id,
-                'label': func_short,
-                'type': 'affected',
-                'severity': severity,
-                'x': x_func,
-                'y': func_y + (idx * func_spacing),
-                'description': f'Function: {func}',
-                'impact': f'Depends on {len(deps)} items',
-                'funcsAffected': 1,
-                'varsAffected': len([d for d in deps if d in full_graph.get('variables', {})])
+                'impact': 'Source of change - this line was modified',
+                'lineNumber': line_num,
+                'severityReason': 'All changed lines are marked HIGH as they are the root cause of downstream impacts'
             })
             
-            # Create edges from changed lines to this function
-            for line_num in changed_lines:
-                edges.append({
-                    'from': f"line{line_num}",
-                    'to': node_id
+            x_func = 400
+            func_y = graph_y_base
+            func_spacing = 120
+            
+            for fidx, func in enumerate(sorted(line_data['affected_funcs'])):
+                func_short = func.split('.')[-1] if '.' in func else func
+                node_id = f"func_{func}_line{line_num}"
+                
+                is_shared = len(all_func_nodes.get(func, set())) > 1
+                affected_by_lines = list(all_func_nodes.get(func, {line_num}))
+                
+                deps = full_graph.get('functions', {}).get(func, {}).get('depends_on', [])
+                num_deps = len(deps)
+                
+                if num_deps > 5:
+                    severity = 'HIGH'
+                    reason = f'HIGH: {num_deps} dependencies (>5) - complex logic, wide impact'
+                elif num_deps > 2:
+                    severity = 'MEDIUM'
+                    reason = f'MEDIUM: {num_deps} dependencies (3-5) - moderate complexity'
+                else:
+                    severity = 'LOW'
+                    reason = f'LOW: {num_deps} dependencies (≤2) - simple, isolated'
+                
+                nodes.append({
+                    'id': node_id,
+                    'label': func_short,
+                    'type': 'affected',
+                    'severity': severity,
+                    'x': x_func,
+                    'y': func_y + (fidx * func_spacing),
+                    'description': f'Function: {func}',
+                    'impact': f'Has {num_deps} dependencies. Changes may affect dependent code',
+                    'isShared': is_shared,
+                    'affectedByLines': affected_by_lines,
+                    'lineNumber': line_num,
+                    'severityReason': reason,
+                    'dependencyCount': num_deps
                 })
+                
+                edges.append({'from': source_node_id, 'to': node_id})
+            
+            x_var = 700
+            var_y = graph_y_base
+            var_spacing = 100
+            
+            for vidx, var in enumerate(sorted(line_data['affected_vars'])):
+                var_short = var.split('.')[-1] if '.' in var else var
+                node_id = f"var_{var}_line{line_num}"
+                
+                is_shared = len(all_var_nodes.get(var, set())) > 1
+                affected_by_lines = list(all_var_nodes.get(var, {line_num}))
+                
+                deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
+                num_deps = len(deps)
+                
+                if num_deps > 4:
+                    severity = 'MEDIUM'
+                    reason = f'MEDIUM: {num_deps} dependencies (>4) - wide propagation'
+                elif num_deps > 0:
+                    severity = 'LOW'
+                    reason = f'LOW: {num_deps} dependencies (1-4) - limited scope'
+                else:
+                    severity = 'LOW'
+                    reason = 'LOW: No dependencies - isolated change'
+                
+                nodes.append({
+                    'id': node_id,
+                    'label': var_short,
+                    'type': 'affected',
+                    'severity': severity,
+                    'x': x_var,
+                    'y': var_y + (vidx * var_spacing),
+                    'description': f'Variable: {var}',
+                    'impact': f'Depends on {num_deps} items',
+                    'isShared': is_shared,
+                    'affectedByLines': affected_by_lines,
+                    'lineNumber': line_num,
+                    'severityReason': reason,
+                    'dependencyCount': num_deps
+                })
+                
+                for func in line_data['affected_funcs']:
+                    func_node_id = f"func_{func}_line{line_num}"
+                    var_deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
+                    if any(func in dep for dep in var_deps):
+                        edges.append({'from': func_node_id, 'to': node_id})
+            
+            all_graphs.append({'lineNumber': line_num, 'nodes': nodes, 'edges': edges})
         
-        # Create nodes for affected variables (right side)
-        x_var = 600
-        var_y = y_start
-        var_spacing = 80
+        cross_graph_edges = []
         
-        for idx, var in enumerate(sorted(affected_vars)):
-            var_short = var.split('.')[-1] if '.' in var else var
-            node_id = f"var_{var}"
-            
-            # Determine severity
-            deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
-            severity = 'MEDIUM' if len(deps) > 2 else 'LOW'
-            
-            nodes.append({
-                'id': node_id,
-                'label': var_short,
-                'type': 'affected',
-                'severity': severity,
-                'x': x_var,
-                'y': var_y + (idx * var_spacing),
-                'description': f'Variable: {var}',
-                'impact': 'Modified due to upstream changes',
-                'varsAffected': 1,
-                'funcsAffected': 0
-            })
-            
-            # Create edges from functions to variables
-            for func in affected_funcs:
-                func_node_id = f"func_{func}"
-                # Check if this variable depends on this function
-                var_deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
-                if any(func in dep for dep in var_deps):
-                    edges.append({
-                        'from': func_node_id,
-                        'to': node_id
+        for func, affecting_lines in all_func_nodes.items():
+            if len(affecting_lines) > 1:
+                lines_list = sorted(affecting_lines)
+                for i in range(len(lines_list) - 1):
+                    cross_graph_edges.append({
+                        'from': f"func_{func}_line{lines_list[i]}",
+                        'to': f"func_{func}_line{lines_list[i + 1]}",
+                        'type': 'shared'
+                    })
+        
+        for var, affecting_lines in all_var_nodes.items():
+            if len(affecting_lines) > 1:
+                lines_list = sorted(affecting_lines)
+                for i in range(len(lines_list) - 1):
+                    cross_graph_edges.append({
+                        'from': f"var_{var}_line{lines_list[i]}",
+                        'to': f"var_{var}_line{lines_list[i + 1]}",
+                        'type': 'shared'
                     })
         
         return {
-            'nodes': nodes,
-            'edges': edges
+            'graphs': all_graphs,
+            'crossGraphEdges': cross_graph_edges,
+            'sharedFunctions': {k: list(v) for k, v in all_func_nodes.items() if len(v) > 1},
+            'sharedVariables': {k: list(v) for k, v in all_var_nodes.items() if len(v) > 1}
         }
     
-    def _create_html_visualization(self, file_path, changed_lines, affected_vars, 
-                                   affected_funcs, claude_analysis):
-        """Create standalone HTML with embedded React visualization using React.createElement"""
-        
+    def _create_html_visualization(self, file_path, changed_lines, affected_vars, affected_funcs, claude_analysis):
         file_name = os.path.basename(file_path)
         changed_lines_str = ", ".join(map(str, sorted(changed_lines)))
         
-        # Build dependency graph data
-        graph_data = self._build_dependency_graph(file_path, changed_lines, affected_vars, affected_funcs)
-        graph_json = json.dumps(graph_data)
+        graph_data = self._build_dependency_graphs_per_line(file_path, changed_lines, affected_vars, affected_funcs)
+        graph_json_str = json.dumps(graph_data)
         
-        # Escape analysis text for JavaScript
-        claude_analysis_safe = claude_analysis.replace('\\', '\\\\').replace('`', '\\`').replace('$', '\\$')
+        # Properly escape for JavaScript template literal
+        claude_analysis_safe = (claude_analysis
+            .replace('\\', '\\\\')
+            .replace('`', '\\`')
+            .replace('${', '\\${'))
         
-        # Convert Python lists to JavaScript arrays
-        vars_list = json.dumps([v.split('.')[-1] for v in sorted(affected_vars)] if affected_vars else [])
-        funcs_list = json.dumps([f.split('.')[-1] for f in sorted(affected_funcs)] if affected_funcs else [])
-        
-        html_template = f"""<!DOCTYPE html>
-<html lang="en">
+        # Build HTML using a readable JavaScript structure
+        html = f'''<!DOCTYPE html>
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Impact Analysis - {file_name}</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body {{
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
-            background: #f3f4f6;
-        }}
+        body {{ margin: 0; font-family: sans-serif; background: #f3f4f6; }}
     </style>
 </head>
 <body>
     <div id="root"></div>
-    
     <script>
-        const React = window.React;
-        const ReactDOM = window.ReactDOM;
         const e = React.createElement;
         const useState = React.useState;
         
-        // Icons
-        const AlertCircle = (props) => e('svg', Object.assign({{}}, props, {{
-            xmlns: "http://www.w3.org/2000/svg",
-            width: "24",
-            height: "24",
-            viewBox: "0 0 24 24",
-            fill: "none",
-            stroke: "currentColor",
-            strokeWidth: "2"
-        }}),
-            e('circle', {{ cx: "12", cy: "12", r: "10" }}),
-            e('line', {{ x1: "12", y1: "8", x2: "12", y2: "12" }}),
-            e('line', {{ x1: "12", y1: "16", x2: "12.01", y2: "16" }})
-        );
+        const graphData = {graph_json_str};
+        graphData.analysis = `{claude_analysis_safe}`;
         
-        const GitBranch = (props) => e('svg', Object.assign({{}}, props, {{
-            xmlns: "http://www.w3.org/2000/svg",
-            width: "24",
-            height: "24",
-            viewBox: "0 0 24 24",
-            fill: "none",
-            stroke: "currentColor",
-            strokeWidth: "2"
-        }}),
-            e('line', {{ x1: "6", y1: "3", x2: "6", y2: "15" }}),
-            e('circle', {{ cx: "18", cy: "6", r: "3" }}),
-            e('circle', {{ cx: "6", cy: "18", r: "3" }}),
-            e('path', {{ d: "M18 9a9 9 0 0 1-9 9" }})
-        );
-        
-        const TrendingUp = (props) => e('svg', Object.assign({{}}, props, {{
-            xmlns: "http://www.w3.org/2000/svg",
-            width: "24",
-            height: "24",
-            viewBox: "0 0 24 24",
-            fill: "none",
-            stroke: "currentColor",
-            strokeWidth: "2"
-        }}),
-            e('polyline', {{ points: "22 7 13.5 15.5 8.5 10.5 2 17" }}),
-            e('polyline', {{ points: "16 7 22 7 22 13" }})
-        );
-        
-        const FileCode = (props) => e('svg', Object.assign({{}}, props, {{
-            xmlns: "http://www.w3.org/2000/svg",
-            width: "24",
-            height: "24",
-            viewBox: "0 0 24 24",
-            fill: "none",
-            stroke: "currentColor",
-            strokeWidth: "2"
-        }}),
-            e('path', {{ d: "M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" }}),
-            e('polyline', {{ points: "14 2 14 8 20 8" }})
-        );
-        
-        // Dependency Graph Component
-        function DependencyGraph(props) {{
-            const data = props.data;
-            const selectedNodeState = useState(null);
-            const selectedNode = selectedNodeState[0];
-            const setSelectedNode = selectedNodeState[1];
-            
-            if (!data || !data.nodes || data.nodes.length === 0) {{
-                return e('div', {{ className: "text-center py-8 text-gray-500" }}, 
-                    'No dependency graph available'
-                );
-            }}
+        function App() {{
+            const [zoom, setZoom] = useState(1);
+            const [selectedNode, setSelectedNode] = useState(null);
+            const [activeTab, setActiveTab] = useState('graph');
             
             const getSeverityColor = (severity) => {{
                 if (severity === 'HIGH') return '#ef4444';
                 if (severity === 'MEDIUM') return '#f59e0b';
-                if (severity === 'LOW') return '#10b981';
-                if (severity === 'VARIABLE') return '#3b82f6';
-                return '#6b7280';
+                return '#10b981';
             }};
             
             const getSeverityBg = (severity) => {{
                 if (severity === 'HIGH') return '#fee2e2';
                 if (severity === 'MEDIUM') return '#fef3c7';
-                if (severity === 'LOW') return '#d1fae5';
-                if (severity === 'VARIABLE') return '#dbeafe';
-                return '#f3f4f6';
+                return '#d1fae5';
             }};
             
-            return e('div', null,
-                e('div', {{ 
-                    className: "relative bg-white rounded-lg border",
-                    style: {{ height: '600px' }}
-                }},
-                    e('svg', {{ 
-                        width: "100%",
-                        height: "100%",
-                        className: "absolute inset-0"
-                    }},
-                        e('defs', null,
-                            e('marker', {{
-                                id: "arrowhead",
-                                markerWidth: "10",
-                                markerHeight: "10",
-                                refX: "9",
-                                refY: "3",
-                                orient: "auto"
+            const totalHeight = graphData.graphs.length * 900;
+            const allNodes = [];
+            const allEdges = [];
+            
+            graphData.graphs.forEach(graph => {{
+                allNodes.push(...graph.nodes);
+                allEdges.push(...graph.edges);
+            }});
+            
+            return e('div', {{ className: 'min-h-screen p-6' }},
+                e('div', {{ className: 'max-w-6xl mx-auto' }},
+                    // Header
+                    e('div', {{ className: 'bg-white p-6 rounded-lg shadow mb-6' }},
+                        e('h1', {{ className: 'text-3xl font-bold' }}, 'Impact Analysis: {file_name}'),
+                        e('p', {{ className: 'text-gray-600 mt-2' }}, 
+                            'Changed Lines: {changed_lines_str} • ' +
+                            '{len(affected_vars)} variables • {len(affected_funcs)} functions affected')
+                    ),
+                    
+                    // Tab selector
+                    e('div', {{ className: 'bg-white p-4 rounded-lg shadow mb-4' }},
+                        e('div', {{ className: 'flex gap-2' }},
+                            e('button', {{
+                                onClick: () => setActiveTab('graph'),
+                                className: 'px-4 py-2 rounded ' + (activeTab === 'graph' ? 'bg-blue-500 text-white' : 'bg-gray-200')
+                            }}, 'Dependency Graph'),
+                            e('button', {{
+                                onClick: () => setActiveTab('analysis'),
+                                className: 'px-4 py-2 rounded ' + (activeTab === 'analysis' ? 'bg-blue-500 text-white' : 'bg-gray-200')
+                            }}, 'Claude Analysis')
+                        )
+                    ),
+                    
+                    // Graph tab
+                    activeTab === 'graph' && e('div', {{ className: 'bg-white p-4 rounded-lg shadow' }},
+                        // Zoom controls
+                        e('div', {{ className: 'flex gap-2 mb-4' }},
+                            e('button', {{
+                                onClick: () => setZoom(Math.max(0.5, zoom - 0.2)),
+                                className: 'px-3 py-2 bg-blue-100 rounded hover:bg-blue-200'
+                            }}, 'Zoom Out'),
+                            e('span', {{ className: 'px-3 py-2 font-bold' }}, zoom.toFixed(1) + 'x'),
+                            e('button', {{
+                                onClick: () => setZoom(Math.min(2, zoom + 0.2)),
+                                className: 'px-3 py-2 bg-blue-100 rounded hover:bg-blue-200'
+                            }}, 'Zoom In')
+                        ),
+                        
+                        // Graph container
+                        e('div', {{ className: 'overflow-auto border', style: {{ maxHeight: '800px' }} }},
+                            e('div', {{ 
+                                className: 'relative bg-white',
+                                style: {{ 
+                                    height: (totalHeight * zoom) + 'px',
+                                    width: (900 * zoom) + 'px',
+                                    transform: 'scale(' + zoom + ')',
+                                    transformOrigin: 'top left'
+                                }}
                             }},
-                                e('polygon', {{
-                                    points: "0 0, 10 3, 0 6",
-                                    fill: "#6b7280"
+                                // SVG for edges
+                                e('svg', {{ width: 900, height: totalHeight, className: 'absolute' }},
+                                    e('defs', null,
+                                        e('marker', {{ id: 'arrowhead', markerWidth: 10, markerHeight: 10, refX: 9, refY: 3, orient: 'auto' }},
+                                            e('polygon', {{ points: '0 0,10 3,0 6', fill: '#666' }})
+                                        ),
+                                        e('marker', {{ id: 'arrowhead-blue', markerWidth: 10, markerHeight: 10, refX: 9, refY: 3, orient: 'auto' }},
+                                            e('polygon', {{ points: '0 0,10 3,0 6', fill: '#3b82f6' }})
+                                        )
+                                    ),
+                                    
+                                    // Regular edges
+                                    allEdges.map((edge, idx) => {{
+                                        const fromNode = allNodes.find(n => n.id === edge.from);
+                                        const toNode = allNodes.find(n => n.id === edge.to);
+                                        if (!fromNode || !toNode) return null;
+                                        return e('line', {{
+                                            key: 'edge-' + idx,
+                                            x1: fromNode.x,
+                                            y1: fromNode.y,
+                                            x2: toNode.x,
+                                            y2: toNode.y,
+                                            stroke: '#999',
+                                            strokeWidth: 2,
+                                            markerEnd: 'url(#arrowhead)'
+                                        }});
+                                    }}),
+                                    
+                                    // Cross-graph edges (shared nodes)
+                                    graphData.crossGraphEdges.map((edge, idx) => {{
+                                        const fromNode = allNodes.find(n => n.id === edge.from);
+                                        const toNode = allNodes.find(n => n.id === edge.to);
+                                        if (!fromNode || !toNode) return null;
+                                        return e('line', {{
+                                            key: 'cross-' + idx,
+                                            x1: fromNode.x,
+                                            y1: fromNode.y,
+                                            x2: toNode.x,
+                                            y2: toNode.y,
+                                            stroke: '#3b82f6',
+                                            strokeWidth: 3,
+                                            strokeDasharray: '5,5',
+                                            markerEnd: 'url(#arrowhead-blue)'
+                                        }});
+                                    }})
+                                ),
+                                
+                                // Nodes
+                                allNodes.map(node => {{
+                                    return e('div', {{
+                                        key: node.id,
+                                        className: 'absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform',
+                                        style: {{
+                                            left: node.x + 'px',
+                                            top: node.y + 'px',
+                                            zIndex: 10
+                                        }},
+                                        onClick: () => setSelectedNode(node)
+                                    }},
+                                        e('div', {{
+                                            className: 'rounded-lg p-3 shadow-lg',
+                                            style: {{
+                                                backgroundColor: getSeverityBg(node.severity),
+                                                borderColor: node.isShared ? '#3b82f6' : getSeverityColor(node.severity),
+                                                borderWidth: node.isShared ? '3px' : '2px',
+                                                borderStyle: node.isShared ? 'dashed' : 'solid',
+                                                maxWidth: '200px'
+                                            }}
+                                        }},
+                                            e('div', {{
+                                                className: 'text-xs font-bold mb-1',
+                                                style: {{ color: node.isShared ? '#3b82f6' : getSeverityColor(node.severity) }}
+                                            }},
+                                                node.type === 'changed' 
+                                                    ? '🔴 LINE ' + node.lineNumber
+                                                    : (node.isShared ? '🔗 SHARED' : '⚠️')
+                                            ),
+                                            e('div', {{ className: 'text-sm font-semibold' }}, node.label),
+                                            e('div', {{
+                                                className: 'text-xs px-2 py-1 rounded mt-2 text-white font-semibold',
+                                                style: {{ backgroundColor: node.isShared ? '#3b82f6' : getSeverityColor(node.severity) }}
+                                            }}, node.severity),
+                                            node.isShared && e('div', {{ className: 'text-xs mt-1 text-blue-600 font-semibold' }},
+                                                'Lines: ' + node.affectedByLines.join(', ')
+                                            )
+                                        )
+                                    );
                                 }})
                             )
                         ),
-                        data.edges.map((edge, i) => {{
-                            const from = data.nodes.find(n => n.id === edge.from);
-                            const to = data.nodes.find(n => n.id === edge.to);
-                            if (!from || !to) return null;
-                            
-                            return e('line', {{
-                                key: i,
-                                x1: from.x,
-                                y1: from.y,
-                                x2: to.x,
-                                y2: to.y,
-                                stroke: "#9ca3af",
-                                strokeWidth: "2",
-                                markerEnd: "url(#arrowhead)",
-                                opacity: "0.6"
-                            }});
-                        }})
-                    ),
-                    data.nodes.map((node) => 
-                        e('div', {{
-                            key: node.id,
-                            className: "absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all hover:scale-110",
-                            style: {{
-                                left: node.x + 'px',
-                                top: node.y + 'px',
-                                backgroundColor: getSeverityBg(node.severity),
-                                borderColor: getSeverityColor(node.severity),
-                                borderWidth: '2px',
-                                borderStyle: 'solid',
-                                maxWidth: '180px',
-                                zIndex: 10
-                            }},
-                            onClick: () => setSelectedNode(node)
-                        }},
-                            e('div', {{ className: "rounded-lg p-3 shadow-lg" }},
-                                e('div', {{ 
-                                    className: "text-xs font-bold mb-1",
-                                    style: {{ color: getSeverityColor(node.severity) }}
-                                }},
-                                    node.type === 'changed' ? '🔴 CHANGED' : '⚠️ AFFECTED'
+                        
+                        // Selected node details
+                        selectedNode && e('div', {{ className: 'mt-4 bg-gradient-to-r from-blue-50 to-blue-100 border-l-4 border-blue-500 p-5 rounded-lg shadow-md' }},
+                            e('div', {{ className: 'flex justify-between mb-3' }},
+                                e('h4', {{ className: 'font-bold text-lg' }}, selectedNode.label),
+                                e('button', {{
+                                    onClick: () => setSelectedNode(null),
+                                    className: 'text-blue-600 hover:text-blue-800 font-bold text-xl'
+                                }}, '✕')
+                            ),
+                            e('div', {{ className: 'space-y-3' }},
+                                e('div', {{ className: 'bg-white rounded p-3' }},
+                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '📋 Description'),
+                                    e('p', {{ className: 'text-sm' }}, selectedNode.description)
                                 ),
-                                e('div', {{ className: "text-sm font-semibold text-gray-900 break-words" }},
-                                    node.label
+                                e('div', {{ className: 'bg-white rounded p-3' }},
+                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '💥 Impact'),
+                                    e('p', {{ className: 'text-sm' }}, selectedNode.impact)
                                 ),
-                                e('div', {{ 
-                                    className: "text-xs px-2 py-1 rounded mt-2 text-white font-semibold",
-                                    style: {{ backgroundColor: getSeverityColor(node.severity) }}
-                                }},
-                                    node.severity
+                                e('div', {{ className: 'bg-white rounded p-3' }},
+                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '🎯 Severity Explanation'),
+                                    e('p', {{ className: 'text-sm' }}, selectedNode.severityReason)
+                                ),
+                                selectedNode.dependencyCount !== undefined && e('div', {{ className: 'bg-white rounded p-3' }},
+                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '🔗 Dependencies'),
+                                    e('p', {{ className: 'text-sm' }}, selectedNode.dependencyCount + ' total dependencies')
+                                ),
+                                selectedNode.isShared && e('div', {{ className: 'bg-blue-100 rounded p-3 border border-blue-300' }},
+                                    e('p', {{ className: 'text-sm font-semibold mb-1' }}, '🔗 Shared Node'),
+                                    e('p', {{ className: 'text-sm' }}, 'Affected by lines: ' + selectedNode.affectedByLines.join(', '))
                                 )
                             )
                         )
-                    )
-                ),
-                selectedNode && e('div', {{ 
-                    className: "mt-4 bg-blue-50 border-l-4 border-blue-500 p-4 rounded"
-                }},
-                    e('h4', {{ className: "font-bold text-blue-900 mb-2" }}, selectedNode.label),
-                    e('p', {{ className: "text-sm text-blue-800 mb-2" }}, selectedNode.description),
-                    e('p', {{ className: "text-sm text-blue-700" }},
-                        e('strong', null, 'Impact: '),
-                        selectedNode.impact
+                    ),
+                    
+                    // Analysis tab
+                    activeTab === 'analysis' && e('div', {{ className: 'bg-white p-6 rounded-lg shadow' }},
+                        e('h2', {{ className: 'text-2xl font-bold mb-4' }}, 'Claude AI Analysis'),
+                        e('div', {{ className: 'whitespace-pre-wrap text-gray-800' }}, graphData.analysis)
                     )
                 )
             );
         }}
         
-        // Main Component
-        function ImpactAnalysis() {{
-            const activeTabState = useState('dependency');
-            const activeTab = activeTabState[0];
-            const setActiveTab = activeTabState[1];
-            
-            const data = {{
-                fileName: '{file_name}',
-                changedLines: '{changed_lines_str}',
-                varsAffected: {len(affected_vars)},
-                funcsAffected: {len(affected_funcs)},
-                analysis: `{claude_analysis_safe}`,
-                dependencyGraph: {graph_json},
-                affectedVars: {vars_list},
-                affectedFuncs: {funcs_list}
-            }};
-            
-            return e('div', {{ className: "min-h-screen bg-gray-50 p-6" }},
-                e('div', {{ className: "max-w-6xl mx-auto" }},
-                    e('div', {{ className: "bg-white rounded-lg shadow-sm p-6 mb-6" }},
-                        e('div', {{ className: "flex items-center mb-4" }},
-                            e(FileCode, {{ className: "w-8 h-8 text-blue-500 mr-3" }}),
-                            e('div', null,
-                                e('h1', {{ className: "text-3xl font-bold text-gray-900" }}, 'Code Impact Analysis'),
-                                e('p', {{ className: "text-gray-600 mt-1" }}, 'Production Deployment Risk Assessment')
-                            )
-                        ),
-                        e('div', {{ className: "grid grid-cols-4 gap-4 mt-6" }},
-                            e('div', {{ className: "bg-blue-50 rounded-lg p-4" }},
-                                e('div', {{ className: "text-blue-600 text-sm font-semibold" }}, 'FILE'),
-                                e('div', {{ className: "text-xl font-bold text-gray-900 mt-1" }}, data.fileName)
-                            ),
-                            e('div', {{ className: "bg-purple-50 rounded-lg p-4" }},
-                                e('div', {{ className: "text-purple-600 text-sm font-semibold" }}, 'CHANGED LINES'),
-                                e('div', {{ className: "text-xl font-bold text-gray-900 mt-1" }}, data.changedLines)
-                            ),
-                            e('div', {{ className: "bg-orange-50 rounded-lg p-4" }},
-                                e('div', {{ className: "text-orange-600 text-sm font-semibold" }}, 'VARIABLES'),
-                                e('div', {{ className: "text-xl font-bold text-gray-900 mt-1" }}, data.varsAffected)
-                            ),
-                            e('div', {{ className: "bg-green-50 rounded-lg p-4" }},
-                                e('div', {{ className: "text-green-600 text-sm font-semibold" }}, 'FUNCTIONS'),
-                                e('div', {{ className: "text-xl font-bold text-gray-900 mt-1" }}, data.funcsAffected)
-                            )
-                        )
-                    ),
-                    e('div', {{ className: "bg-white rounded-lg shadow-sm mb-6" }},
-                        e('div', {{ className: "flex border-b" }},
-                            e('button', {{
-                                className: 'px-6 py-3 font-medium transition ' + (activeTab === 'dependency' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600 hover:text-blue-600'),
-                                onClick: () => setActiveTab('dependency')
-                            }},
-                                e('div', {{ className: "flex items-center gap-2" }},
-                                    e(GitBranch, {{ className: "w-4 h-4" }}),
-                                    e('span', null, 'Dependency Graph')
-                                )
-                            ),
-                            e('button', {{
-                                className: 'px-6 py-3 font-medium transition ' + (activeTab === 'summary' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600 hover:text-blue-600'),
-                                onClick: () => setActiveTab('summary')
-                            }},
-                                e('div', {{ className: "flex items-center gap-2" }},
-                                    e(AlertCircle, {{ className: "w-4 h-4" }}),
-                                    e('span', null, 'Impact Summary')
-                                )
-                            ),
-                            e('button', {{
-                                className: 'px-6 py-3 font-medium transition ' + (activeTab === 'analysis' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-gray-600 hover:text-blue-600'),
-                                onClick: () => setActiveTab('analysis')
-                            }},
-                                e('div', {{ className: "flex items-center gap-2" }},
-                                    e(TrendingUp, {{ className: "w-4 h-4" }}),
-                                    e('span', null, 'Claude Analysis')
-                                )
-                            )
-                        )
-                    ),
-                    e('div', {{ className: "bg-white rounded-lg shadow-sm p-6" }},
-                        activeTab === 'dependency' && e('div', null,
-                            e('h2', {{ className: "text-2xl font-bold mb-6" }}, 'Dependency Graph'),
-                            e(DependencyGraph, {{ data: data.dependencyGraph }}),
-                            e('div', {{ className: "grid grid-cols-2 gap-6 mt-8" }},
-                                e('div', null,
-                                    e('h3', {{ className: "font-semibold text-gray-900 mb-3" }}, 'Affected Variables (' + data.varsAffected + ')'),
-                                    e('div', {{ className: "bg-gray-50 rounded p-4 max-h-80 overflow-y-auto" }},
-                                        data.affectedVars.length > 0 
-                                            ? e('div', {{ className: "space-y-2" }},
-                                                data.affectedVars.map((v, i) => 
-                                                    e('div', {{ 
-                                                        key: i,
-                                                        className: "text-sm font-mono bg-white p-2 rounded border"
-                                                    }}, v)
-                                                )
-                                            )
-                                            : e('p', {{ className: "text-gray-500 text-sm" }}, 'No variables affected')
-                                    )
-                                ),
-                                e('div', null,
-                                    e('h3', {{ className: "font-semibold text-gray-900 mb-3" }}, 'Affected Functions (' + data.funcsAffected + ')'),
-                                    e('div', {{ className: "bg-gray-50 rounded p-4 max-h-80 overflow-y-auto" }},
-                                        data.affectedFuncs.length > 0
-                                            ? e('div', {{ className: "space-y-2" }},
-                                                data.affectedFuncs.map((f, i) => 
-                                                    e('div', {{ 
-                                                        key: i,
-                                                        className: "text-sm font-mono bg-white p-2 rounded border"
-                                                    }}, f)
-                                                )
-                                            )
-                                            : e('p', {{ className: "text-gray-500 text-sm" }}, 'No functions affected')
-                                    )
-                                )
-                            )
-                        ),
-                        activeTab === 'summary' && e('div', null,
-                            e('h2', {{ className: "text-2xl font-bold mb-4" }}, 'Impact Summary'),
-                            e('div', {{ className: "space-y-4" }},
-                                e('div', {{ className: "bg-red-50 border-l-4 border-red-500 p-4" }},
-                                    e('h3', {{ className: "font-semibold text-red-900 flex items-center gap-2" }},
-                                        e(AlertCircle, {{ className: "w-5 h-5" }}),
-                                        'Changed Lines: ' + data.changedLines
-                                    ),
-                                    e('p', {{ className: "text-red-800 mt-2" }},
-                                        'Affects ' + data.varsAffected + ' variable(s) and ' + data.funcsAffected + ' function(s) across your codebase.'
-                                    )
-                                ),
-                                e('div', {{ className: "bg-blue-50 border-l-4 border-blue-500 p-4" }},
-                                    e('h3', {{ className: "font-semibold text-blue-900" }}, 'Dependencies Tracked'),
-                                    e('p', {{ className: "text-blue-800 mt-2" }},
-                                        'All downstream impacts identified. Check the dependency graph for visual representation.'
-                                    )
-                                ),
-                                e('div', {{ className: "bg-yellow-50 border-l-4 border-yellow-500 p-4" }},
-                                    e('h3', {{ className: "font-semibold text-yellow-900" }}, 'Production Recommendation'),
-                                    e('p', {{ className: "text-yellow-800 mt-2" }},
-                                        "Review Claude's analysis before deployment. Focus on risk assessment and testing requirements."
-                                    )
-                                )
-                            )
-                        ),
-                        activeTab === 'analysis' && e('div', null,
-                            e('h2', {{ className: "text-2xl font-bold mb-4" }}, 'Claude AI Analysis'),
-                            e('div', {{ className: "bg-gray-50 rounded-lg p-6 whitespace-pre-wrap text-gray-800" }},
-                                data.analysis
-                            )
-                        )
-                    ),
-                    e('div', {{ className: "mt-6 bg-white rounded-lg shadow-sm p-4 text-center text-sm text-gray-600" }},
-                        'Generated on ' + new Date().toLocaleString() + ' • Powered by Claude AI'
-                    )
-                )
-            );
-        }}
-        
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(e(ImpactAnalysis));
+        ReactDOM.createRoot(document.getElementById('root')).render(e(App));
     </script>
 </body>
-</html>"""
+</html>'''
         
-        return html_template
+        return html
