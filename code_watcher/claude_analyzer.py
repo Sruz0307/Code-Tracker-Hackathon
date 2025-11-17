@@ -188,11 +188,33 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                 'severityReason': 'All changed lines are marked HIGH as they are the root cause of downstream impacts'
             })
             
-            x_func = 400
-            func_y = graph_y_base
-            func_spacing = 120
+            # Build function-variable mappings based on which variables are used in which functions
+            func_to_vars = {}
+            var_to_funcs = {}
             
-            for fidx, func in enumerate(sorted(line_data['affected_funcs'])):
+            # Analyze which variables are referenced by which functions
+            for func in line_data['affected_funcs']:
+                func_deps = full_graph.get('functions', {}).get(func, {}).get('depends_on', [])
+                func_to_vars[func] = []
+                
+                for var in line_data['affected_vars']:
+                    # Check if this variable is a dependency of this function
+                    if var in func_deps or any(var in dep for dep in func_deps):
+                        func_to_vars[func].append(var)
+                        if var not in var_to_funcs:
+                            var_to_funcs[var] = []
+                        var_to_funcs[var].append(func)
+            
+            # Track which variables have been placed
+            placed_vars = set()
+            
+            # Position functions and their related variables
+            x_func = 350
+            x_var = 600  # Horizontal position for variables
+            current_y = graph_y_base
+            func_spacing = 100  # Minimum spacing between function rows
+            
+            for func_idx, func in enumerate(sorted(line_data['affected_funcs'])):
                 func_short = func.split('.')[-1] if '.' in func else func
                 node_id = f"func_{func}_line{line_num}"
                 
@@ -212,13 +234,20 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                     severity = 'LOW'
                     reason = f'LOW: {num_deps} dependencies (≤2) - simple, isolated'
                 
+                # Get related variables for this function
+                related_vars = func_to_vars.get(func, [])
+                num_related_vars = len(related_vars)
+                
+                # Position the function
+                func_y = current_y
+                
                 nodes.append({
                     'id': node_id,
                     'label': func_short,
                     'type': 'affected',
                     'severity': severity,
                     'x': x_func,
-                    'y': func_y + (fidx * func_spacing),
+                    'y': func_y,
                     'description': f'Function: {func}',
                     'impact': f'Has {num_deps} dependencies. Changes may affect dependent code',
                     'isShared': is_shared,
@@ -228,53 +257,99 @@ Focus on ACTIONABLE insights for SME review before production deployment."""
                     'dependencyCount': num_deps
                 })
                 
+                # Edge from changed line to function
                 edges.append({'from': source_node_id, 'to': node_id})
-            
-            x_var = 700
-            var_y = graph_y_base
-            var_spacing = 100
-            
-            for vidx, var in enumerate(sorted(line_data['affected_vars'])):
-                var_short = var.split('.')[-1] if '.' in var else var
-                node_id = f"var_{var}_line{line_num}"
                 
-                is_shared = len(all_var_nodes.get(var, set())) > 1
-                affected_by_lines = list(all_var_nodes.get(var, {line_num}))
-                
-                deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
-                num_deps = len(deps)
-                
-                if num_deps > 4:
-                    severity = 'MEDIUM'
-                    reason = f'MEDIUM: {num_deps} dependencies (>4) - wide propagation'
-                elif num_deps > 0:
-                    severity = 'LOW'
-                    reason = f'LOW: {num_deps} dependencies (1-4) - limited scope'
-                else:
-                    severity = 'LOW'
-                    reason = 'LOW: No dependencies - isolated change'
-                
-                nodes.append({
-                    'id': node_id,
-                    'label': var_short,
-                    'type': 'affected',
-                    'severity': severity,
-                    'x': x_var,
-                    'y': var_y + (vidx * var_spacing),
-                    'description': f'Variable: {var}',
-                    'impact': f'Depends on {num_deps} items',
-                    'isShared': is_shared,
-                    'affectedByLines': affected_by_lines,
-                    'lineNumber': line_num,
-                    'severityReason': reason,
-                    'dependencyCount': num_deps
-                })
-                
-                for func in line_data['affected_funcs']:
-                    func_node_id = f"func_{func}_line{line_num}"
+                # Add related variables horizontally next to this function
+                var_start_y = current_y
+                for var_idx, var in enumerate(sorted(related_vars)):
+                    var_short = var.split('.')[-1] if '.' in var else var
+                    var_node_id = f"var_{var}_line{line_num}_func{func_idx}"
+                    
+                    is_var_shared = len(all_var_nodes.get(var, set())) > 1
+                    var_affected_by_lines = list(all_var_nodes.get(var, {line_num}))
+                    
                     var_deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
-                    if any(func in dep for dep in var_deps):
-                        edges.append({'from': func_node_id, 'to': node_id})
+                    num_var_deps = len(var_deps)
+                    
+                    if num_var_deps > 4:
+                        var_severity = 'MEDIUM'
+                        var_reason = f'MEDIUM: {num_var_deps} dependencies (>4) - wide propagation'
+                    elif num_var_deps > 0:
+                        var_severity = 'LOW'
+                        var_reason = f'LOW: {num_var_deps} dependencies (1-4) - limited scope'
+                    else:
+                        var_severity = 'LOW'
+                        var_reason = 'LOW: No dependencies - isolated change'
+                    
+                    var_y = var_start_y + (var_idx * 90)
+                    
+                    nodes.append({
+                        'id': var_node_id,
+                        'label': var_short,
+                        'type': 'affected',
+                        'severity': var_severity,
+                        'x': x_var,
+                        'y': var_y,
+                        'description': f'Variable: {var}',
+                        'impact': f'Depends on {num_var_deps} items',
+                        'isShared': is_var_shared,
+                        'affectedByLines': var_affected_by_lines,
+                        'lineNumber': line_num,
+                        'severityReason': var_reason,
+                        'dependencyCount': num_var_deps
+                    })
+                    
+                    # Edge from function to its variable
+                    edges.append({'from': node_id, 'to': var_node_id})
+                    placed_vars.add(var)
+                
+                # Move down for next function
+                # Space based on how many variables this function had
+                current_y += max(num_related_vars * 90, func_spacing)
+            
+            # Add any orphaned variables (not connected to any function)
+            orphaned_vars = [v for v in line_data['affected_vars'] if v not in placed_vars]
+            
+            if orphaned_vars:
+                for var_idx, var in enumerate(sorted(orphaned_vars)):
+                    var_short = var.split('.')[-1] if '.' in var else var
+                    var_node_id = f"var_{var}_line{line_num}_orphan"
+                    
+                    is_var_shared = len(all_var_nodes.get(var, set())) > 1
+                    var_affected_by_lines = list(all_var_nodes.get(var, {line_num}))
+                    
+                    var_deps = full_graph.get('variables', {}).get(var, {}).get('depends_on', [])
+                    num_var_deps = len(var_deps)
+                    
+                    if num_var_deps > 4:
+                        var_severity = 'MEDIUM'
+                        var_reason = f'MEDIUM: {num_var_deps} dependencies (>4) - wide propagation'
+                    elif num_var_deps > 0:
+                        var_severity = 'LOW'
+                        var_reason = f'LOW: {num_var_deps} dependencies (1-4) - limited scope'
+                    else:
+                        var_severity = 'LOW'
+                        var_reason = 'LOW: No dependencies - isolated change'
+                    
+                    nodes.append({
+                        'id': var_node_id,
+                        'label': var_short,
+                        'type': 'affected',
+                        'severity': var_severity,
+                        'x': x_var,
+                        'y': current_y + (var_idx * 90),
+                        'description': f'Variable: {var}',
+                        'impact': f'Depends on {num_var_deps} items',
+                        'isShared': is_var_shared,
+                        'affectedByLines': var_affected_by_lines,
+                        'lineNumber': line_num,
+                        'severityReason': var_reason,
+                        'dependencyCount': num_var_deps
+                    })
+                    
+                    # Edge from changed line to orphaned variable
+                    edges.append({'from': source_node_id, 'to': var_node_id})
             
             all_graphs.append({'lineNumber': line_num, 'nodes': nodes, 'edges': edges})
         
