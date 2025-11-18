@@ -40,7 +40,7 @@ python main.py C:\path\to\your\project
 ```
 
 ##  Architecture
-
+(Diagram available in the repo - architecture-diagram.jpg )
 ### High-Level Flow
 ```
 File Save → Change Detection → Dependency Analysis → Claude AI Analysis → Interactive Visualization
