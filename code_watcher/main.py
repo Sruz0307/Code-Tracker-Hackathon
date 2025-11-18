@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 if len(sys.argv) < 1:
     print("Please provide the project path as a command-line argument.")
     sys.exit(1)
-PROJECT_PATH = sys.argv[1]#r"C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2"
+PROJECT_PATH = sys.argv[1]
 OUTPUT_PATH = PROJECT_PATH+r"\output.txt"
 
 # 🔧 Set your Claude API key
