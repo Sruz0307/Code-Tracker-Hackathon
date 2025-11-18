@@ -22,7 +22,7 @@ OUTPUT_PATH = PROJECT_PATH+r"\output.txt"
 
 # 🔧 Set your Claude API key
 load_dotenv()  # Load environment variables from .env file
-CLAUDE_API_KEY = os.getenv("CLAUD_API_KEY") # Replace with your actual API key
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY") # Replace with your actual API key
 
 # Initialize Claude analyzer (set to None to disable)
 claude_analyzer = ClaudeImpactAnalyzer(CLAUDE_API_KEY) if CLAUDE_API_KEY else None
