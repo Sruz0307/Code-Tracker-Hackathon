@@ -10,13 +10,19 @@ from analyzer import (
 from watcher import watch_folder
 from cache_manager import CacheManager
 from claude_analyzer import ClaudeImpactAnalyzer
+import sys
+from dotenv import load_dotenv
 
 # 🔧 Set your project path
-PROJECT_PATH = r"C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2"
+if len(sys.argv) < 1:
+    print("Please provide the project path as a command-line argument.")
+    sys.exit(1)
+PROJECT_PATH = sys.argv[1]#r"C:\Users\Sruthi\Programming_Stuff\SME_Hackathon\attempt3_v4\target2"
 OUTPUT_PATH = PROJECT_PATH+r"\output.txt"
 
 # 🔧 Set your Claude API key
-CLAUDE_API_KEY = ""  # Replace with your actual API key
+load_dotenv()  # Load environment variables from .env file
+CLAUDE_API_KEY = os.getenv("CLAUD_API_KEY") # Replace with your actual API key
 
 # Initialize Claude analyzer (set to None to disable)
 claude_analyzer = ClaudeImpactAnalyzer(CLAUDE_API_KEY) if CLAUDE_API_KEY else None
