@@ -1,10 +1,10 @@
-# 🔍 Code Impact Analyzer with AI-Powered Insights
+# Code Impact Analyzer with AI-Powered Insights
 
 ## Overview
 
 **Code Impact Analyzer** is an intelligent system that automatically tracks code changes in real-time and provides comprehensive impact analysis for production deployment decisions. By combining dependency graph analysis with Claude AI, it helps developers and SMEs understand the full scope of their code changes before deployment.
 
-## 🎯 Problem Statement
+## Problem Statement
 
 When developers modify code:
 - **Unknown Impacts**: Changes to one line can affect multiple functions and variables across the codebase
@@ -12,7 +12,7 @@ When developers modify code:
 - **Production Failures**: Unanticipated downstream effects lead to bugs in production
 - **Manual Review**: SMEs spend hours reviewing code without clear impact visualization
 
-## ✨ Solution
+##  Solution
 
 Our system provides:
 1. **Real-time Change Detection**: Automatically detects when Python files are saved
@@ -21,7 +21,25 @@ Our system provides:
 4. **AI-Powered Insights**: Claude AI analyzes severity levels and provides production risk assessments
 5. **Interactive Visualization**: Zoom-enabled, clickable dependency graphs with detailed explanations
 
-## 🏗️ Architecture
+##  Installation
+
+### Prerequisites
+```bash
+# Python 3.8+
+pip install watchdog requests
+```
+
+### Setup
+1. Clone the repository
+2. Configure API key in .env file:
+
+### Run
+```bash
+cd code_watcher
+python main.py C:\path\to\your\project
+```
+
+##  Architecture
 
 ### High-Level Flow
 ```
@@ -69,7 +87,7 @@ File Save → Change Detection → Dependency Analysis → Claude AI Analysis �
 - Shows cross-graph connections for shared nodes
 - Includes zoom controls and detailed node information
 
-## 🎨 Key Features
+##  Key Features
 
 ### Real-Time Analysis
 - Automatic detection on file save
@@ -106,11 +124,11 @@ File Save → Change Detection → Dependency Analysis → Claude AI Analysis �
 ### Interactive Visualization
 - **Zoom Controls**: 0.5x to 2.0x magnification
 - **Click to Inspect**: Click any node to see:
-  - 📋 Description: What the node represents
-  - 💥 Impact: How it affects the codebase
-  - 🎯 Severity Explanation: WHY it's marked HIGH/MEDIUM/LOW
-  - 🔗 Dependencies: Total count of dependencies
-  - 🔗 Shared Info: Which lines affect this node (if shared)
+  -  Description: What the node represents
+  -  Impact: How it affects the codebase
+  -  Severity Explanation: WHY it's marked HIGH/MEDIUM/LOW
+  -  Dependencies: Total count of dependencies
+  -  Shared Info: Which lines affect this node (if shared)
 - **Scrollable Canvas**: Navigate large dependency trees easily
 
 ### Claude AI Analysis Tab
@@ -119,7 +137,7 @@ File Save → Change Detection → Dependency Analysis → Claude AI Analysis �
 - Required testing recommendations
 - Immediate actions needed
 
-## 📊 Output Format
+##  Output Format
 
 ### Console Output
 ```
@@ -130,9 +148,9 @@ Changed lines: [26, 27, 28]
    Variables: {'test1.create_account.account_number', ...}
    Functions: {'test1.generate_account_number', ...}
 
-🤖 GENERATING CLAUDE IMPACT ANALYSIS...
-✅ Visualization saved to: C:\Users\...\impact_analysis_20250118.html
-🌐 Opening in browser...
+ GENERATING CLAUDE IMPACT ANALYSIS...
+ Visualization saved to: C:\Users\...\impact_analysis_20250118.html
+ Opening in browser...
 ```
 
 ### Visual Output
@@ -141,23 +159,7 @@ Changed lines: [26, 27, 28]
 - **Analysis Tab**: Full Claude AI insights
 - **Node Details Panel**: Shows when clicking nodes
 
-## 🚀 Installation
 
-### Prerequisites
-```bash
-# Python 3.8+
-pip install watchdog requests
-```
-
-### Setup
-1. Clone the repository
-2. Configure API key in .env file:
-
-### Run
-```bash
-cd code_watcher
-python main.py C:\path\to\your\project
-```
 
 The watcher will start monitoring your target directory. Save any Python file to trigger analysis.
 
@@ -191,7 +193,7 @@ code_watcher/
 - **Output File**: Change `OUTPUT_PATH` in `main.py`
 - **Zoom Range**: Adjust min/max in HTML template (default: 0.5x-2.0x)
 
-## 💡 Use Cases
+##  Use Cases
 
 ### 1. Pre-Commit Review
 Run analysis before committing to see full impact of changes
@@ -208,7 +210,7 @@ Ensure refactoring doesn't break unexpected dependencies
 ### 5. Onboarding New Developers
 Teach codebase structure through visual dependency exploration
 
-## 🎯 Example Scenario
+##  Example Scenario
 
 **Developer changes 2 lines in `test1.py`:**
 
@@ -223,7 +225,7 @@ Teach codebase structure through visual dependency exploration
 5. Severity: HIGH (>5 dependencies)
 6. Claude analysis: "CRITICAL - Both changes affect account creation pipeline"
 
-## 📈 Technical Details
+##  Technical Details
 
 ### Dependency Detection Algorithm
 1. Parse file with Python AST
@@ -251,7 +253,7 @@ Teach codebase structure through visual dependency exploration
   - Gray arrows: Within-graph dependencies
   - Blue dashed arrows: Cross-graph shared node connections
 
-## 🔐 Security
+##  Security
 
 - API keys stored locally in code (not committed to git)
 - Analysis runs locally on your machine
@@ -259,7 +261,7 @@ Teach codebase structure through visual dependency exploration
 - HTML visualizations stored in temp directory
 - No data persistence beyond session
 
-## ⚡ Performance
+##  Performance
 
 - **Initial Scan**: 2-5 seconds (depends on project size)
 - **Per-File Analysis**: 1-2 seconds (local analysis)
@@ -267,7 +269,7 @@ Teach codebase structure through visual dependency exploration
 - **Total Time**: ~10-20 seconds from save to visualization
 - **Memory**: ~50-100MB (depends on graph complexity)
 
-## 🐛 Troubleshooting
+##  Troubleshooting
 
 ### "No changes detected"
 - Ensure file content actually changed
@@ -294,7 +296,7 @@ pip install watchdog requests
 - Use zoom controls to adjust view
 - Reduce number of nodes by filtering
 
-## 🚧 Limitations
+##  Limitations
 
 - **Language Support**: Currently Python only
 - **File Size**: Large files (>1000 lines) may have crowded graphs
@@ -302,7 +304,7 @@ pip install watchdog requests
 - **Real-time Only**: Doesn't analyze git history (only current changes)
 - **Single File**: Analyzes one file at a time
 
-## 🔮 Future Enhancements
+##  Future Enhancements
 
 ### Phase 1: VS Code Extension (In Progress)
 - Inline severity badges in editor
@@ -329,7 +331,7 @@ pip install watchdog requests
 - Slack/Teams notifications
 - Dashboard for multiple projects
 
-## 📚 Technical Stack
+##  Technical Stack
 
 - **Language**: Python 3.8+
 - **AST Parsing**: Python `ast` module
@@ -339,19 +341,19 @@ pip install watchdog requests
 - **Visualization**: React 18 + Tailwind CSS
 - **Browser Rendering**: Static HTML with embedded React
 
-## 👥 Team
+##  Team
 
 Developed for SME Hackathon - Attempt 3 v4
 
-## 📄 License
+##  License
 
 MIT License - See LICENSE file for details
 
-## 🤝 Contributing
+##  Contributing
 
 This is an internal hackathon project. For questions or suggestions, contact the development team.
 
-## 📞 Support
+##  Support
 
 For issues or questions:
 1. Check the troubleshooting section above
